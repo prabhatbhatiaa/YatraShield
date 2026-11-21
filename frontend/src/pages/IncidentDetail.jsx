@@ -27,6 +27,9 @@ function IncidentDetail({ id }) {
   const { user } = useAuth();
   const [state, setState] = useState({ incident: null, loading: true, error: "" });
   const [busy, setBusy] = useState(false);
+  const [statusNote, setStatusNote] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [submittingNote, setSubmittingNote] = useState(false);
   const { incident, loading, error } = state;
 
   const load = useCallback(async () => {
@@ -59,13 +62,30 @@ function IncidentDetail({ id }) {
     if (!next || next === incident.status) return;
     setBusy(true);
     try {
-      const res = await incidentApi.updateStatus(id, next);
+      const res = await incidentApi.updateStatus(id, next, statusNote.trim());
       setState({ incident: res.data.incident, loading: false, error: "" });
+      setStatusNote("");
       toast(`${shortId(incident)} → ${statusLabel(next)}`);
     } catch (err) {
       setState((s) => ({ ...s, error: errorMessage(err, "Update failed.") }));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onAddNote(e) {
+    e?.preventDefault();
+    if (!noteText.trim()) return;
+    setSubmittingNote(true);
+    try {
+      const res = await incidentApi.addNote(id, noteText.trim());
+      setState({ incident: res.data.incident, loading: false, error: "" });
+      setNoteText("");
+      toast("Note added to incident.");
+    } catch (err) {
+      setState((s) => ({ ...s, error: errorMessage(err, "Failed to add note.") }));
+    } finally {
+      setSubmittingNote(false);
     }
   }
 
@@ -166,6 +186,54 @@ function IncidentDetail({ id }) {
               {incident.assignedAt && <div><dt>Assigned</dt><dd>{new Date(incident.assignedAt).toLocaleString()}</dd></div>}
             </dl>
           </section>
+
+          <section className="card card-pad">
+            <h2 className="card-title">Status Notes & Updates</h2>
+            {incident.statusNotes && incident.statusNotes.length > 0 ? (
+              <ul className="settings" style={{ marginTop: 12 }}>
+                {incident.statusNotes.map((entry, idx) => (
+                  <li key={entry._id || idx} style={{ alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span className="chip" data-tone="neutral"><i className="chip-dot" /> {statusLabel(entry.status)}</span>
+                        <small className="mono" style={{ color: "var(--faint)", fontSize: "11.5px" }}>
+                          {formatTime({ createdAt: entry.addedAt })}
+                        </small>
+                      </div>
+                      <p className="prose" style={{ marginTop: 8, fontSize: "14px" }}>{entry.note}</p>
+                      {entry.addedBy && (
+                        <small style={{ color: "var(--muted)", display: "block", marginTop: 4 }}>
+                          — {entry.addedBy.name || entry.addedBy.email || "Staff"} ({entry.addedBy.role || "staff"})
+                        </small>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : incident.notes ? (
+              <p className="prose" style={{ marginTop: 8 }}>{incident.notes}</p>
+            ) : (
+              <p style={{ color: "var(--muted)", fontSize: "14px", marginTop: 12 }}>No progress or resolution notes recorded yet.</p>
+            )}
+
+            {user?.role !== "tourist" && (
+              <form onSubmit={onAddNote} style={{ marginTop: 18, display: "grid", gap: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Post a progress update or note..."
+                  value={noteText}
+                  disabled={submittingNote}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  maxLength={2000}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="submit" className="btn btn-sm btn-ghost" disabled={submittingNote || !noteText.trim()}>
+                    {submittingNote ? "Posting..." : "Add Note"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
         </div>
 
         <div className="stack">
@@ -194,13 +262,23 @@ function IncidentDetail({ id }) {
             )}
 
             {next.length > 0 && user?.role !== "tourist" && (
-              <label className="field field-tight">
-                <span>Advance status</span>
-                <Select value={incident.status} disabled={busy} onChange={(e) => onStatus(e.target.value)} className="is-block">
-                  <option value={incident.status}>{statusLabel(incident.status)}</option>
-                  {next.map((s) => <option key={s} value={s}>→ {statusLabel(s)}</option>)}
-                </Select>
-              </label>
+              <div style={{ marginTop: 18, display: "grid", gap: 10 }}>
+                <label className="field field-tight">
+                  <span>Advance status</span>
+                  <Select value={incident.status} disabled={busy} onChange={(e) => onStatus(e.target.value)} className="is-block">
+                    <option value={incident.status}>{statusLabel(incident.status)}</option>
+                    {next.map((s) => <option key={s} value={s}>→ {statusLabel(s)}</option>)}
+                  </Select>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Resolution remarks or transition note (optional)..."
+                  value={statusNote}
+                  disabled={busy}
+                  onChange={(e) => setStatusNote(e.target.value)}
+                  maxLength={2000}
+                />
+              </div>
             )}
           </section>
         </div>
